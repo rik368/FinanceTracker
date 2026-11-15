@@ -1,0 +1,25 @@
+{
+  "browser": "firefox",
+  "version": "153.0",
+  "platform": "win32",
+  "passed": true,
+  "date": "2026-11-14T14:57:00.528Z",
+  "widths": [
+    375,
+    768,
+    1280
+  ],
+  "scenarios": [
+    "registration",
+    "sample",
+    "search",
+    "validation",
+    "CRUD",
+    "CSV",
+    "responsive tabs",
+    "logout",
+    "login",
+    "account deletion",
+    "deleted login rejected"
+  ]
+}

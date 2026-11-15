@@ -1,0 +1,9 @@
+<div class="row-actions">
+    <button type="button" class="quiet" disabled="@Disabled" @onclick="Edit">Edit</button>
+    <button type="button" class="quiet over" disabled="@Disabled" @onclick="Delete">Delete</button>
+</div>
+@code {
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback Edit { get; set; }
+    [Parameter] public EventCallback Delete { get; set; }
+}

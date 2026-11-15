@@ -1,0 +1,302 @@
+@using FinanceTracker.Domain
+@using FinanceTracker.Data
+@using System.Globalization
+@inject Ledger Ledger
+@inject Demo Demo
+@inject MonthState Calendar
+@inject ILogger<FinanceWorkspace> Logger
+
+<CascadingValue Value="Calendar" IsFixed="true">
+    <div class="heading">
+        <div><p class="overline">PERSONAL FINANCE</p><h1>@title</h1></div>
+        <MonthPicker Disabled="@(busy || Editing)" Changed="Move" />
+    </div>
+    <nav class="tabs" aria-label="Sections">
+        @foreach (var section in sections)
+        {
+            <button type="button" aria-current="@(title == section ? "page" : null)" disabled="@(busy || Editing)"
+                    @onclick="() => Open(section)">@section</button>
+        }
+    </nav>
+
+    @if (error is not null) { <p class="message error" role="alert">@error</p> }
+    @if (notice is not null) { <p class="message" role="status">@notice</p> }
+    @if (data is null)
+    {
+        <button class="quiet" disabled="@busy" @onclick="Reload">@(busy ? "Loading…" : "Try again")</button>
+    }
+    else
+    {
+        @if (data.Categories.Length == 0)
+        {
+            <section class="panel empty">
+                <h2>Start with a category</h2>
+                <p>Create a category or load sample data for the selected month.</p>
+                <button class="primary" disabled="@(busy || Editing)" @onclick="Seed">Load sample data</button>
+                <button class="quiet" disabled="@(busy || Editing)" @onclick='() => Open("Categories")'>Categories</button>
+            </section>
+        }
+
+        @switch (title)
+        {
+            case "Overview":
+                var totals = Finance.Summarize(data.Entries);
+                <div class="metrics">
+                    <Metric Label="Monthly balance" Value="@totals.Balance" Featured="true" />
+                    <Metric Label="Income" Value="@totals.Income" />
+                    <Metric Label="Expenses" Value="@totals.Expenses" />
+                </div>
+                <div class="charts">
+                    <BarChart Title="Income and expenses" Rows="@(new[] { new ChartRow("Income", totals.Income), new ChartRow("Expenses", totals.Expenses) })" />
+                    <BarChart Title="Spending by category" Rows="ExpenseRows(data)" />
+                </div>
+                <section class="panel gap">
+                    <div class="toolbar"><h2>Recent transactions</h2><button type="button" class="quiet" @onclick='() => Open("Transactions")'>View all transactions</button></div>
+                    @foreach (var row in data.Transactions.Take(4))
+                    {
+                        <div class="item">
+                            <div><strong>@(string.IsNullOrWhiteSpace(row.Note) ? row.Category.Name : row.Note)</strong><small>@row.Date.ToString("dd MMM yyyy") · @row.Category.Name</small></div>
+                            <b class="@(row.Category.Flow == Flow.Income ? "income" : "")">@(row.Category.Flow == Flow.Income ? "+" : "−")@Finance.Money(row.Cents)</b>
+                        </div>
+                    }
+                    @if (data.Transactions.Length == 0) { <p>No transactions this month.</p> }
+                </section>
+                break;
+            case "Analytics":
+                <BarChart Title="Spending by category" Rows="ExpenseRows(data)" />
+                <section class="panel gap">
+                    <h2>Month-end forecast</h2>
+                    @if (month == new DateOnly(today.Year, today.Month, 1))
+                    {
+                        var spent = Finance.Summarize(data.Entries.Where(e => e.Date <= today)).Expenses;
+                        var predicted = decimal.ToInt64(decimal.Round(Finance.Forecast(spent, today.Day, DateTime.DaysInMonth(today.Year, today.Month))));
+                        <p class="money">@Finance.Money(predicted)</p>
+                        <p>The projection extends your average daily spending so far across the full month.</p>
+                    }
+                    else { <p>The forecast is available for the current month.</p> }
+                </section>
+                break;
+            case "Transactions":
+                var matching = data.Transactions.Where(MatchesFilter).ToArray();
+                var pages = Math.Max(1, (matching.Length + PageSize - 1) / PageSize);
+                var currentPage = Math.Min(page, pages);
+                <div class="toolbar">
+                    <label class="search-field">Search transactions <input class="form-control" type="search" placeholder="Search notes or categories" @bind="search" @bind:event="oninput" @bind:after="ResetPage" /></label>
+                    <label>Category <select class="form-select" @bind="filter" @bind:after="ResetPage">
+                        <option value="0">All categories</option>
+                        @foreach (var c in data.Categories) { <option value="@c.Id">@c.Name (@FlowLabel(c.Flow))</option> }
+                    </select></label>
+                    <a class="quiet" href="@($"/exports/transactions?month={month:yyyy-MM}")" data-enhance-nav="false" download>Export month CSV</a>
+                    <button type="button" class="primary" disabled="@(busy || Editing || data.Categories.Length == 0)" @onclick="NewTransaction">Add transaction</button>
+                </div>
+                @if (entry is not null)
+                {
+                    <EditForm Model="entry" OnValidSubmit="SaveTransaction" class="panel form-panel">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+                        <fieldset disabled="@busy">
+                            <legend>@(entry.Id == 0 ? "New transaction" : "Edit transaction")</legend>
+                            <label>Category <InputSelect @bind-Value="entry.CategoryId" class="form-select">
+                                <option value="0">Choose a category</option>
+                                @foreach (var c in data.Categories) { <option value="@c.Id">@c.Name (@FlowLabel(c.Flow))</option> }
+                            </InputSelect></label>
+                            <label>Date <InputDate @bind-Value="entry.Date" class="form-control" /></label>
+                            <label>Amount, KZT <InputNumber @bind-Value="entry.Amount" step="0.01" class="form-control" /></label>
+                            <label>Note <InputText @bind-Value="entry.Note" class="form-control" maxlength="160" /></label>
+                            <FormActions Cancel="Cancel" />
+                        </fieldset>
+                    </EditForm>
+                }
+                <section class="panel items">
+                    @foreach (var row in matching.Skip((currentPage - 1) * PageSize).Take(PageSize))
+                    {
+                        <div class="item" @key="row.Id">
+                            <div><strong>@(string.IsNullOrWhiteSpace(row.Note) ? row.Category.Name : row.Note)</strong><small>@row.Date.ToString("dd MMM yyyy", CultureInfo.GetCultureInfo("en-GB")) · @row.Category.Name</small></div>
+                            <b class="@(row.Category.Flow == Flow.Income ? "income" : "")">@(row.Category.Flow == Flow.Income ? "+" : "−")@Finance.Money(row.Cents)</b>
+                            <RowActions Disabled="@(busy || Editing)" Edit="() => EditTransaction(row)" Delete='() => AskDelete("transaction", row.Id)' />
+                        </div>
+                    }
+                    @if (!data.Transactions.Any(MatchesFilter)) { <p>No transactions match this month and your filters.</p> }
+                </section>
+                @if (pages > 1)
+                {
+                    <nav class="toolbar gap" aria-label="Transaction pages">
+                        <button class="quiet" disabled="@(currentPage <= 1 || Editing || busy)" @onclick="() => page = currentPage - 1">Previous</button>
+                        <span>Page @currentPage of @pages · @matching.Length transactions</span>
+                        <button class="quiet" disabled="@(currentPage >= pages || Editing || busy)" @onclick="() => page = currentPage + 1">Next</button>
+                    </nav>
+                }
+                break;
+            case "Categories":
+                <div class="toolbar"><button class="primary" disabled="@(busy || Editing)" @onclick="() => category = new()">Add category</button></div>
+                @if (category is not null)
+                {
+                    <EditForm Model="category" OnValidSubmit="SaveCategory" class="panel form-panel">
+                        <DataAnnotationsValidator /><ValidationSummary />
+                        <fieldset disabled="@busy">
+                            <legend>@(category.Id == 0 ? "New category" : "Edit category")</legend>
+                            <label>Name <InputText @bind-Value="category.Name" class="form-control" maxlength="60" /></label>
+                            <label>Type <InputSelect @bind-Value="category.Flow" class="form-select" disabled="@(category.Id != 0)">
+                                <option value="Expense">Expense</option><option value="Income">Income</option>
+                            </InputSelect></label>
+                            <FormActions Cancel="Cancel" />
+                        </fieldset>
+                    </EditForm>
+                }
+                <section class="panel items">
+                    @foreach (var row in data.Categories)
+                    {
+                        <div class="item" @key="row.Id">
+                            <div><strong>@row.Name</strong><small>@FlowLabel(row.Flow)</small></div>
+                            <RowActions Disabled="@(busy || Editing)" Edit="() => EditCategory(row)" Delete='() => AskDelete("category", row.Id)' />
+                        </div>
+                    }
+                    @if (data.Categories.Length == 0) { <p>No categories yet.</p> }
+                </section>
+                break;
+            case "Budgets":
+                var spending = Finance.Spending(data.Entries);
+                <div class="toolbar"><button class="primary" disabled="@(busy || Editing || !data.Categories.Any(x => x.Flow == Flow.Expense))" @onclick="() => budget = new()">Add budget</button></div>
+                @if (budget is not null)
+                {
+                    <EditForm Model="budget" OnValidSubmit="SaveBudget" class="panel form-panel">
+                        <DataAnnotationsValidator /><ValidationSummary />
+                        <fieldset disabled="@busy">
+                            <legend>@(budget.Id == 0 ? "New budget" : "Edit budget")</legend>
+                            <label>Expense category <InputSelect @bind-Value="budget.CategoryId" class="form-select">
+                                <option value="0">Choose a category</option>
+                                @foreach (var c in data.Categories.Where(c => c.Flow == Flow.Expense)) { <option value="@c.Id">@c.Name</option> }
+                            </InputSelect></label>
+                            <label>Limit, KZT <InputNumber @bind-Value="budget.Amount" step="0.01" class="form-control" /></label>
+                            <FormActions Cancel="Cancel" />
+                        </fieldset>
+                    </EditForm>
+                }
+                <section class="panel items">
+                    @foreach (var row in data.Budgets)
+                    {
+                        var spent = spending.GetValueOrDefault(row.CategoryId);
+                        <div class="item" @key="row.Id">
+                            <div>
+                                <strong>@row.Category.Name</strong><small>@Finance.Money(spent) of @Finance.Money(row.Cents)</small>
+                                <progress aria-label="@row.Category.Name" value="@Math.Min(spent, row.Cents)" max="@row.Cents"></progress>
+                                <small class="@(spent > row.Cents ? "over" : "")">@(spent > row.Cents ? $"Over budget by {Finance.Money(spent - row.Cents)}" : $"Remaining {Finance.Money(row.Cents - spent)}")</small>
+                            </div>
+                            <RowActions Disabled="@(busy || Editing)" Edit="() => EditBudget(row)" Delete='() => AskDelete("budget", row.Id)' />
+                        </div>
+                    }
+                    @if (data.Budgets.Length == 0) { <p>No budgets set for this month.</p> }
+                </section>
+                break;
+        }
+
+        @if (removal is not null)
+        {
+            <div class="panel gap" role="group" aria-label="Confirm deletion">
+                <p>Delete the selected record?</p>
+                <button type="button" class="danger" disabled="@busy" @onclick="Delete">Delete</button>
+                <button type="button" class="quiet" disabled="@busy" @onclick="Cancel">Cancel</button>
+            </div>
+        }
+    }
+</CascadingValue>
+
+@code {
+    private readonly string[] sections = ["Overview", "Transactions", "Categories", "Budgets", "Analytics"];
+    private readonly DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+    private string title = "Overview";
+    private DateOnly month => Calendar.Month;
+    private LedgerMonth? data;
+    private TransactionInput? entry;
+    private CategoryInput? category;
+    private BudgetInput? budget;
+    private (string Kind, int Id)? removal;
+    private const int PageSize = 20;
+    private int page = 1;
+    private int filter;
+    private string search = "";
+    private void ResetPage() => page = 1;
+    private bool MatchesFilter(Transaction row) =>
+        (filter == 0 || row.CategoryId == filter) &&
+        (row.Note.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+         row.Category.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase));
+    private bool busy;
+    private string? error;
+    private string? notice;
+    private bool Editing => entry is not null || category is not null || budget is not null || removal is not null;
+
+    protected override Task OnInitializedAsync() => Reload();
+    private Task Reload() => Run();
+    private Task Move(int offset)
+    {
+        if (busy || Editing) return Task.CompletedTask;
+        Calendar.Move(offset);
+        page = 1;
+        data = null;
+        return Reload();
+    }
+
+    private void Open(string section)
+    {
+        if (Editing) return;
+        title = section;
+        error = notice = null;
+    }
+
+    private void Cancel()
+    {
+        entry = null;
+        category = null;
+        budget = null;
+        removal = null;
+        error = null;
+    }
+
+    private void NewTransaction() => entry = new() { Date = today.Year == month.Year && today.Month == month.Month ? today : month, CategoryId = filter };
+    private void EditTransaction(Transaction row) => entry = new() { Id = row.Id, CategoryId = row.CategoryId, Date = row.Date, Amount = row.Cents / 100m, Note = row.Note };
+    private void EditCategory(Category row) => category = new() { Id = row.Id, Name = row.Name, Flow = row.Flow };
+    private void EditBudget(Budget row) => budget = new() { Id = row.Id, CategoryId = row.CategoryId, Amount = row.Cents / 100m };
+    private void AskDelete(string kind, int id) => removal = (kind, id);
+    private Task SaveTransaction() => Run(() => Ledger.SaveAsync(entry!),
+        entry!.Date.Year == month.Year && entry.Date.Month == month.Month ? "Transaction saved." :
+        $"Transaction saved for {entry.Date:MM.yyyy}.");
+    private Task SaveCategory() => Run(() => Ledger.SaveAsync(category!), "Category saved.");
+    private Task SaveBudget() => Run(() => Ledger.SaveAsync(budget!, month), "Budget saved.");
+    private Task Delete() => Run(() => Ledger.DeleteAsync(removal!.Value.Kind, removal.Value.Id), "Record deleted.");
+    private Task Seed() => Run(() => Demo.PopulateAsync(month), "Sample data loaded.");
+    private static string FlowLabel(Flow flow) => flow == Flow.Income ? "Income" : "Expense";
+    private static ChartRow[] ExpenseRows(LedgerMonth snapshot) => snapshot.Entries.Where(e => e.Flow == Flow.Expense)
+        .GroupBy(e => e.Category).Select(g => new ChartRow(g.Key, g.Sum(x => x.Cents)))
+        .OrderByDescending(x => x.Cents).ToArray();
+
+    private async Task Run(Func<Task>? change = null, string? success = null)
+    {
+        if (busy) return;
+        busy = true;
+        error = notice = null;
+        try
+        {
+            if (change is not null)
+            {
+                await change();
+                Cancel();
+                notice = success;
+            }
+            data = await Ledger.ReadAsync(month);
+            if (!data.Categories.Any(x => x.Id == filter)) filter = 0;
+        }
+        catch (InvalidOperationException ex) when (change is not null && notice is null && ex is LedgerRuleException)
+        {
+            error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Finance operation failed");
+            error = notice is null ? "Something went wrong. Please try again." :
+                "Your changes were saved, but the list could not refresh. Please reload.";
+            if (notice is not null) data = null;
+        }
+        finally { busy = false; }
+    }
+}
+

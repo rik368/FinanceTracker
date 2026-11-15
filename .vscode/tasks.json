@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Finance Tracker",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["run", "--project", "FinanceTracker", "--launch-profile", "http"],
+      "windows": {
+        "command": "powershell.exe",
+        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/Start-FinanceTracker.ps1"]
+      },
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Test Finance Tracker",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["test", "FinanceTracker.sln"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+@page "/"
+<PageTitle>Finance Tracker</PageTitle>
+<AuthorizeView>
+    <Authorized>
+        <FinanceWorkspace @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+    </Authorized>
+    <NotAuthorized>
+        <section class="welcome">
+            <p class="overline">PERSONAL FINANCE</p>
+            <h1>Know where<br />your money goes.</h1>
+            <p>Track income and expenses, understand your balance, and plan your monthly budget.</p>
+            <a class="primary" href="/Account/Register">Create account</a>
+        </section>
+    </NotAuthorized>
+</AuthorizeView>
+

@@ -1,0 +1,20 @@
+@using FinanceTracker.Domain
+<section class="panel">
+    <h2>@Title</h2>
+    @if (Rows.Count == 0) { <p>No data for the selected month.</p> }
+    else
+    {
+        var maximum = Math.Max(1, Rows.Max(x => x.Cents));
+        <ul class="bars">
+            @foreach (var row in Rows)
+            {
+                <li><div><span>@row.Label</span><strong>@Finance.Money(row.Cents)</strong></div>
+                    <meter aria-label="@row.Label" min="0" max="@maximum" value="@row.Cents"></meter></li>
+            }
+        </ul>
+    }
+</section>
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<ChartRow> Rows { get; set; } = [];
+}

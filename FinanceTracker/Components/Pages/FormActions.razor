@@ -1,0 +1,5 @@
+<div class="form-actions">
+    <button class="primary" type="submit">Save</button>
+    <button class="quiet" type="button" @onclick="Cancel">Cancel</button>
+</div>
+@code { [Parameter] public EventCallback Cancel { get; set; } }

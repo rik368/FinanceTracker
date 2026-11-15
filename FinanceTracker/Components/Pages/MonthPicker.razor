@@ -1,0 +1,13 @@
+@using FinanceTracker.Domain
+@using System.Globalization
+<div class="month" role="group" aria-label="Month">
+    <button class="quiet" aria-label="Previous month" disabled="@(Disabled || Calendar.Month == new DateOnly(2000, 1, 1))" @onclick="() => Changed.InvokeAsync(-1)">‹</button>
+    <span>@Calendar.Month.ToString("MMMM yyyy", CultureInfo.GetCultureInfo("en-GB"))</span>
+    <button class="quiet" aria-label="Next month" disabled="@(Disabled || Calendar.Month == new DateOnly(2099, 12, 1))" @onclick="() => Changed.InvokeAsync(1)">›</button>
+</div>
+@code {
+    [CascadingParameter] public MonthState Calendar { get; set; } = null!;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<int> Changed { get; set; }
+}
+
