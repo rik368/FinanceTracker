@@ -100,6 +100,24 @@ app.MapRazorComponents<App>()
 app.MapAdditionalIdentityEndpoints();
 app.MapFinanceExport();
 
+// The desktop launcher opts in; normal server and test runs never open a browser.
+if (builder.Configuration.GetValue<bool>("OpenBrowser"))
+{
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        var address = app.Urls.FirstOrDefault(url => url.StartsWith("http://localhost:", StringComparison.OrdinalIgnoreCase));
+        if (address is null) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(address) { UseShellExecute = true });
+        }
+        catch (Exception error)
+        {
+            app.Logger.LogWarning(error, "Could not open a browser. Open {Address} manually.", address);
+        }
+    });
+}
+
 app.Run();
 
 
