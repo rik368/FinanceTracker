@@ -2,13 +2,11 @@
 
 **Final C# Project | Personal Finance Management Web Application**  
 **Group:** IT-2508  
-**Team (as listed in the submitted project documentation):** Rat Renat and Yerkebulan Alshynbekuly
+**Team : Rat Renat and Yerkebulan Alshynbekuly
 
 FinanceTracker is an English-language **Blazor Interactive Server** web application for recording personal income and expenses, setting monthly budgets, and reviewing spending patterns. All displayed monetary values use **Kazakhstani tenge (KZT)**.
 
 The project is designed for a **local academic demonstration**. Users enter their transactions manually; the application does not connect to bank accounts or transfer money.
-
-![FinanceTracker dashboard](dashboard.png)
 
 ## 1. Project Goal and Practical Value
 
